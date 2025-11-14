@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Клиенты - Админ панель</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container">
+    <a class="navbar-brand" href="/admin/dashboard">SEC Admin</a>
+    <div class="navbar-nav ms-auto">
+      <a class="nav-link" href="/admin/dashboard">Главная</a>
+      <a class="nav-link" href="/logout">Выйти</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Клиенты</h1>
+    <a href="/admin/clients/create" class="btn btn-primary">
+      <i class="fas fa-plus"></i> Добавить клиента
+    </a>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-striped">
+          <thead>
+          <tr>
+            <th>ID</th>
+            <th>ФИО</th>
+            <th>Телефон</th>
+            <th>Email</th>
+            <th>Адрес</th>
+            <th>Дата регистрации</th>
+            <th>Действия</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="client : ${clients}">
+            <td th:text="${client.id}">1</td>
+            <td th:text="${client.fullName}">Иванов Иван Иванович</td>
+            <td th:text="${client.phone}">+79991234567</td>
+            <td th:text="${client.email}">client@example.com</td>
+            <td th:text="${client.address}">Москва, ул. Примерная, д. 1</td>
+            <td th:text="${#temporals.format(client.createdAt, 'dd.MM.yyyy')}">01.11.2024</td>
+            <td>
+              <a th:href="@{/admin/clients/edit/{id}(id=${client.id})}"
+                 class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-edit"></i>
+              </a>
+              <form th:action="@{/admin/clients/delete/{id}(id=${client.id})}"
+                    method="post" style="display: inline;">
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Удалить клиента?')">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

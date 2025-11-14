@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8">
+  <title>Графики работы - Админ панель</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container">
+    <a class="navbar-brand" href="/admin/dashboard">SEC Admin</a>
+    <div class="navbar-nav ms-auto">
+      <a class="nav-link" href="/admin/dashboard">Главная</a>
+      <a class="nav-link" href="/logout">Выйти</a>
+    </div>
+  </div>
+</nav>
+
+<div class="container mt-4">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>Графики работы</h1>
+    <a href="/admin/schedules/create" class="btn btn-primary">
+      <i class="fas fa-plus"></i> Добавить график
+    </a>
+  </div>
+
+  <div class="card">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-striped">
+          <thead>
+          <tr>
+            <th>ID</th>
+            <th>Сотрудник</th>
+            <th>Объект</th>
+            <th>Дата</th>
+            <th>Время работы</th>
+            <th>Примечания</th>
+            <th>Действия</th>
+          </tr>
+          </thead>
+          <tbody>
+          <tr th:each="schedule : ${schedules}">
+            <td th:text="${schedule.id}">1</td>
+            <td th:text="${schedule.employee.fullName}">Петров Петр Петрович</td>
+            <td th:text="${schedule.guardObject.name}">Офисный центр</td>
+            <td th:text="${#temporals.format(schedule.date, 'dd.MM.yyyy')}">15.11.2024</td>
+            <td>
+              <span th:text="${#temporals.format(schedule.startTime, 'HH:mm')}">09:00</span> -
+              <span th:text="${#temporals.format(schedule.endTime, 'HH:mm')}">18:00</span>
+            </td>
+            <td th:text="${schedule.notes}">Дежурство на основном посту</td>
+            <td>
+              <a th:href="@{/admin/schedules/edit/{id}(id=${schedule.id})}"
+                 class="btn btn-sm btn-outline-primary">
+                <i class="fas fa-edit"></i>
+              </a>
+              <form th:action="@{/admin/schedules/delete/{id}(id=${schedule.id})}"
+                    method="post" style="display: inline;">
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Удалить график работы?')">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </form>
+            </td>
+          </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>
