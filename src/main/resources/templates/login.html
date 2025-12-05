@@ -45,7 +45,6 @@
                        placeholder="Введите пароль" required>
             </div>
 
-            <!-- Простой CSRF токен -->
             <input type="hidden" th:name="${_csrf != null ? _csrf.parameterName : '_csrf'}"
                    th:value="${_csrf != null ? _csrf.token : ''}" />
 
@@ -54,7 +53,7 @@
 
         <div class="text-center mt-3">
             <p>Нет аккаунта? <a th:href="@{/register}" class="text-decoration-none">Зарегистрируйтесь здесь</a></p>
-            <small>Охранное агентство "SEC"</small>
+            <small>Охранное агентство </small>
         </div>
     </div>
 </div>

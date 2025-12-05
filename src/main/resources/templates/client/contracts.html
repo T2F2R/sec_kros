@@ -73,6 +73,11 @@
         <h1 class="h2">
           <i class="fas fa-file-contract"></i> Мои договоры
         </h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+          <a th:href="@{/client/contracts/create}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Создать договор
+          </a>
+        </div>
       </div>
 
       <div th:if="${contracts != null and !contracts.empty}">

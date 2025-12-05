@@ -42,10 +42,8 @@ public class Employee {
     @Column(name = "is_admin")
     private Boolean isAdmin = false;
 
-    // Конструкторы
     public Employee() {}
 
-    // Геттеры и сеттеры
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 

@@ -43,12 +43,9 @@ public class AuthController {
 
     @GetMapping("/login")
     public String showLoginPage(Model model, HttpServletRequest request) {
-        // Добавляем пустой объект для формы, если его нет
         if (!model.containsAttribute("loginRequest")) {
-            // Не нужно добавлять loginRequest, так как Spring Security обрабатывает форму
         }
 
-        // Проверяем параметры ошибки
         if (request.getParameter("error") != null) {
             model.addAttribute("error", "Неверный email или пароль");
         }

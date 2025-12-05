@@ -27,7 +27,6 @@ public class CustomUserDetailsService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String email) throws UsernameNotFoundException {
-        // Сначала ищем в таблице сотрудников
         Optional<Employee> employeeOpt = employeeRepository.findByEmail(email);
         if (employeeOpt.isPresent()) {
             Employee employee = employeeOpt.get();
@@ -46,7 +45,6 @@ public class CustomUserDetailsService implements UserDetailsService {
             );
         }
 
-        // Затем ищем в таблице клиентов
         Optional<Client> clientOpt = clientRepository.findByEmail(email);
         if (clientOpt.isPresent()) {
             Client client = clientOpt.get();

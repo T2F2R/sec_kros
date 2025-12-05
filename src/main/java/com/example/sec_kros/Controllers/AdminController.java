@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -40,19 +42,30 @@ public class AdminController {
     @Autowired
     private ServiceService serviceService;
 
+    private Employee getCurrentEmployee() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        String username = authentication.getName();
+        return employeeService.findByEmail(username);
+    }
+
     // ==================== ДАШБОРД ====================
 
     @GetMapping("/dashboard")
     public String adminDashboard(Model model) {
+        Employee employee = getCurrentEmployee();
+        if (employee == null) {
+            return "redirect:/login";
+        }
+
         long clientsCount = clientService.getAllClients().size();
         long employeesCount = employeeService.getAllEmployees().size();
         long contractsCount = contractService.getAllContracts().size();
         long objectsCount = guardObjectService.getAllGuardObjects().size();
         long schedulesCount = scheduleService.getAllSchedules().size();
 
-        // Получаем контракты на одобрение (со статусом inactive)
         List<Contract> pendingContracts = contractService.getContractsByStatus("inactive");
 
+        model.addAttribute("employee", employee);
         model.addAttribute("clientsCount", clientsCount);
         model.addAttribute("employeesCount", employeesCount);
         model.addAttribute("contractsCount", contractsCount);
@@ -69,10 +82,8 @@ public class AdminController {
     public String showApproveContractForm(@PathVariable Long id, Model model) {
         Optional<Contract> contract = contractService.getContractById(id);
         if (contract.isPresent() && "inactive".equals(contract.get().getStatus())) {
-            // Получаем всех сотрудников для выбора
             List<Employee> securityEmployees = employeeService.getSecurityEmployees();
 
-            // Проверяем готовность контракта
             ValidationResult validationResult = contractService.validateContractForApproval(id);
 
             model.addAttribute("contract", contract.get());
@@ -92,7 +103,6 @@ public class AdminController {
                                   RedirectAttributes redirectAttributes,
                                   Model model) {
 
-        // Получаем контракт для отображения формы
         Optional<Contract> contract = contractService.getContractById(id);
         if (contract.isEmpty()) {
             redirectAttributes.addFlashAttribute("error", "Контракт не найден");
@@ -100,7 +110,6 @@ public class AdminController {
         }
 
         if (bindingResult.hasErrors()) {
-            // Возвращаем форму с ошибками
             List<Employee> securityEmployees = employeeService.getSecurityEmployees();
             ValidationResult validationResult = contractService.validateContractForApproval(id);
 
@@ -121,7 +130,6 @@ public class AdminController {
         } catch (RuntimeException e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
 
-            // При ошибке также возвращаем форму с данными
             List<Employee> securityEmployees = employeeService.getSecurityEmployees();
             ValidationResult validationResult = contractService.validateContractForApproval(id);
 
@@ -334,7 +342,6 @@ public class AdminController {
                                  Model model) {
 
         if (bindingResult.hasErrors()) {
-            // Добавляем списки обратно в модель для отображения формы с ошибками
             List<Client> clients = clientService.getAllClients();
             List<ServiceEntity> services = serviceService.getAllServices();
             model.addAttribute("clients", clients);
@@ -384,7 +391,6 @@ public class AdminController {
                                  Model model) {
 
         if (bindingResult.hasErrors()) {
-            // Добавляем списки обратно в модель для отображения формы с ошибками
             List<Client> clients = clientService.getAllClients();
             List<ServiceEntity> services = serviceService.getAllServices();
             model.addAttribute("clients", clients);
@@ -442,7 +448,6 @@ public class AdminController {
         List<GuardObject> objects = guardObjectService.getAllGuardObjects();
         model.addAttribute("objects", objects);
 
-        // Создаем Map с информацией о возможности удаления для каждого объекта
         Map<Long, Boolean> canDelete = new HashMap<>();
         for (GuardObject object : objects) {
             canDelete.put(object.getId(), guardObjectService.canDeleteGuardObject(object.getId()));
@@ -470,7 +475,6 @@ public class AdminController {
                                Model model) {
 
         if (bindingResult.hasErrors()) {
-            // Добавляем списки обратно в модель для отображения формы с ошибками
             List<Client> clients = clientService.getAllClients();
             List<Contract> contracts = contractService.getAllContracts();
             model.addAttribute("clients", clients);
@@ -488,7 +492,6 @@ public class AdminController {
         } catch (RuntimeException e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
 
-            // Возвращаем списки для повторного отображения формы
             List<Client> clients = clientService.getAllClients();
             List<Contract> contracts = contractService.getAllContracts();
             model.addAttribute("clients", clients);
@@ -533,7 +536,6 @@ public class AdminController {
                                Model model) {
 
         if (bindingResult.hasErrors()) {
-            // Добавляем списки обратно в модель для отображения формы с ошибками
             List<Client> clients = clientService.getAllClients();
             List<Contract> contracts = contractService.getAllContracts();
             model.addAttribute("clients", clients);
@@ -551,7 +553,6 @@ public class AdminController {
         } catch (RuntimeException e) {
             redirectAttributes.addFlashAttribute("error", e.getMessage());
 
-            // Возвращаем списки для повторного отображения формы
             List<Client> clients = clientService.getAllClients();
             List<Contract> contracts = contractService.getAllContracts();
             model.addAttribute("clients", clients);
@@ -564,7 +565,6 @@ public class AdminController {
 
     @PostMapping("/objects/delete/{id}")
     public String deleteObject(@PathVariable Long id, RedirectAttributes redirectAttributes) {
-        // Проверяем, можно ли удалить объект
         boolean canDelete = guardObjectService.canDeleteGuardObject(id);
 
         if (!canDelete) {
@@ -605,7 +605,6 @@ public class AdminController {
         }
 
         try {
-            // Проверка уникальности названия услуги
             if (serviceService.existsByName(serviceDTO.getName())) {
                 redirectAttributes.addFlashAttribute("error", "Услуга с таким названием уже существует");
                 return "redirect:/admin/services/create";
@@ -648,7 +647,6 @@ public class AdminController {
         }
 
         try {
-            // Проверка уникальности названия услуги (исключая текущую услугу)
             Optional<ServiceEntity> existingService = serviceService.getServiceById(id);
             if (existingService.isPresent()) {
                 ServiceEntity currentService = existingService.get();
@@ -717,7 +715,6 @@ public class AdminController {
                                  Model model) {
 
         if (bindingResult.hasErrors()) {
-            // Добавляем списки обратно в модель для отображения формы с ошибками
             List<Employee> employees = employeeService.getAllEmployees();
             List<GuardObject> guardObjects = guardObjectService.getAllGuardObjects();
             model.addAttribute("employees", employees);
@@ -773,7 +770,6 @@ public class AdminController {
                                  Model model) {
 
         if (bindingResult.hasErrors()) {
-            // Добавляем списки обратно в модель для отображения формы с ошибками
             List<Employee> employees = employeeService.getAllEmployees();
             List<GuardObject> guardObjects = guardObjectService.getAllGuardObjects();
             model.addAttribute("employees", employees);
@@ -866,5 +862,16 @@ public class AdminController {
         } catch (IOException e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    @GetMapping("/reports")
+    public String reportsPage(Model model) {
+        Employee employee = getCurrentEmployee();
+        if (employee == null) {
+            return "redirect:/login";
+        }
+
+        model.addAttribute("employee", employee);
+        return "admin/reports";
     }
 }

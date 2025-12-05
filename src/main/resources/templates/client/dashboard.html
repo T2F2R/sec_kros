@@ -21,9 +21,12 @@
         <i class="fas fa-bell"></i> Уведомления
         <span th:if="${unreadCount > 0}" class="badge bg-danger rounded-pill" th:text="${unreadCount}"></span>
       </a>
-      <a class="nav-link text-white" href="/logout">
-        <i class="fas fa-sign-out-alt"></i> Выйти
-      </a>
+      <form th:action="@{/logout}" method="post" class="d-inline">
+        <button type="submit" class="btn btn-link text-white nav-link p-0"
+                style="background: none; border: none; cursor: pointer;">
+          <i class="fas fa-sign-out-alt"></i> Выйти
+        </button>
+      </form>
     </div>
   </div>
 </nav>

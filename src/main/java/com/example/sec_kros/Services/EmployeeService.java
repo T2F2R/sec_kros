@@ -27,7 +27,6 @@ public class EmployeeService {
     }
 
     public Employee createEmployee(EmployeeDTO employeeDTO) {
-        // Проверка уникальности email и логина
         if (employeeRepository.existsByEmail(employeeDTO.getEmail())) {
             throw new RuntimeException("Сотрудник с таким email уже существует");
         }
@@ -47,7 +46,6 @@ public class EmployeeService {
         employee.setPosition(employeeDTO.getPosition());
         employee.setIsAdmin(employeeDTO.getIsAdmin() != null ? employeeDTO.getIsAdmin() : false);
 
-        // Хеширование пароля (обязательное поле при создании)
         if (employeeDTO.getPassword() != null && !employeeDTO.getPassword().isEmpty()) {
             String hashedPassword = passwordEncoder.encode(employeeDTO.getPassword());
             employee.setPasswordHash(hashedPassword);
@@ -72,12 +70,10 @@ public class EmployeeService {
                     employee.setPosition(employeeDTO.getPosition());
                     employee.setIsAdmin(employeeDTO.getIsAdmin() != null ? employeeDTO.getIsAdmin() : false);
 
-                    // Обновление пароля, если он указан
                     if (employeeDTO.getPassword() != null && !employeeDTO.getPassword().isEmpty()) {
                         String hashedPassword = passwordEncoder.encode(employeeDTO.getPassword());
                         employee.setPasswordHash(hashedPassword);
                     }
-                    // Если пароль не указан, оставляем старый
 
                     return employeeRepository.save(employee);
                 })
@@ -104,8 +100,6 @@ public class EmployeeService {
         return employeeRepository.findByLogin(login);
     }
 
-    // ДОБАВЛЕННЫЕ МЕТОДЫ ДЛЯ РАБОТЫ С ОХРАННИКАМИ
-
     public List<Employee> getEmployeesByPositionContaining(String position) {
         return employeeRepository.findByPositionContaining(position);
     }
@@ -116,5 +110,10 @@ public class EmployeeService {
 
     public long countSecurityEmployees() {
         return employeeRepository.countByPositionContaining("охран");
+    }
+
+    public Employee findByEmail(String email) {
+        return employeeRepository.findByEmail(email)
+                .orElse(null);
     }
 }

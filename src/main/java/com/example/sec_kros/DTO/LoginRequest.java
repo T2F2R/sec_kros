@@ -11,7 +11,6 @@ public class LoginRequest {
     @NotBlank(message = "Пароль обязателен")
     private String password;
 
-    // Конструкторы
     public LoginRequest() {}
 
     public LoginRequest(String email, String password) {
@@ -19,7 +18,6 @@ public class LoginRequest {
         this.password = password;
     }
 
-    // Геттеры и сеттеры
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
 
