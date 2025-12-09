@@ -4,6 +4,8 @@ import com.example.sec_kros.Entities.*;
 import com.example.sec_kros.DTO.*;
 import com.example.sec_kros.Services.*;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -18,6 +20,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +29,8 @@ import java.util.Optional;
 @Controller
 @RequestMapping("/admin")
 public class AdminController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AdminController.class);
 
     @Autowired
     private ClientService clientService;
@@ -42,6 +47,12 @@ public class AdminController {
     @Autowired
     private ServiceService serviceService;
 
+    @Autowired
+    private ScheduleService scheduleService;
+
+    @Autowired
+    private ReportService reportService;
+
     private Employee getCurrentEmployee() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         String username = authentication.getName();
@@ -52,48 +63,68 @@ public class AdminController {
 
     @GetMapping("/dashboard")
     public String adminDashboard(Model model) {
+        logger.info("Admin dashboard accessed");
+
         Employee employee = getCurrentEmployee();
         if (employee == null) {
+            logger.warn("Attempt to access dashboard without authentication");
             return "redirect:/login";
         }
 
-        long clientsCount = clientService.getAllClients().size();
-        long employeesCount = employeeService.getAllEmployees().size();
-        long contractsCount = contractService.getAllContracts().size();
-        long objectsCount = guardObjectService.getAllGuardObjects().size();
-        long schedulesCount = scheduleService.getAllSchedules().size();
+        try {
+            long clientsCount = clientService.getAllClients().size();
+            long employeesCount = employeeService.getAllEmployees().size();
+            long contractsCount = contractService.getAllContracts().size();
+            long objectsCount = guardObjectService.getAllGuardObjects().size();
+            long schedulesCount = scheduleService.getAllSchedules().size();
 
-        List<Contract> pendingContracts = contractService.getContractsByStatus("inactive");
+            List<Contract> pendingContracts = contractService.getContractsByStatus("inactive");
 
-        model.addAttribute("employee", employee);
-        model.addAttribute("clientsCount", clientsCount);
-        model.addAttribute("employeesCount", employeesCount);
-        model.addAttribute("contractsCount", contractsCount);
-        model.addAttribute("objectsCount", objectsCount);
-        model.addAttribute("schedulesCount", schedulesCount);
-        model.addAttribute("pendingContracts", pendingContracts);
+            model.addAttribute("employee", employee);
+            model.addAttribute("clientsCount", clientsCount);
+            model.addAttribute("employeesCount", employeesCount);
+            model.addAttribute("contractsCount", contractsCount);
+            model.addAttribute("objectsCount", objectsCount);
+            model.addAttribute("schedulesCount", schedulesCount);
+            model.addAttribute("pendingContracts", pendingContracts);
 
-        return "admin/dashboard";
+            logger.info("Dashboard loaded successfully for admin: {}", employee.getEmail());
+            return "admin/dashboard";
+
+        } catch (Exception e) {
+            logger.error("Error loading admin dashboard for user: {}", employee.getEmail(), e);
+            model.addAttribute("error", "Произошла ошибка при загрузке данных");
+            return "admin/dashboard";
+        }
     }
 
-// ==================== ОДОБРЕНИЕ КОНТРАКТОВ ====================
+    // ==================== ОДОБРЕНИЕ КОНТРАКТОВ ====================
 
     @GetMapping("/contracts/approve/{id}")
     public String showApproveContractForm(@PathVariable Long id, Model model) {
-        Optional<Contract> contract = contractService.getContractById(id);
-        if (contract.isPresent() && "inactive".equals(contract.get().getStatus())) {
-            List<Employee> securityEmployees = employeeService.getSecurityEmployees();
+        logger.info("Showing approve contract form for contract ID: {}", id);
 
-            ValidationResult validationResult = contractService.validateContractForApproval(id);
+        try {
+            Optional<Contract> contract = contractService.getContractById(id);
+            if (contract.isPresent() && "inactive".equals(contract.get().getStatus())) {
+                List<Employee> securityEmployees = employeeService.getSecurityEmployees();
+                ValidationResult validationResult = contractService.validateContractForApproval(id);
 
-            model.addAttribute("contract", contract.get());
-            model.addAttribute("securityEmployees", securityEmployees);
-            model.addAttribute("approvalDTO", new ContractApprovalDTO());
-            model.addAttribute("validationResult", validationResult);
+                model.addAttribute("contract", contract.get());
+                model.addAttribute("securityEmployees", securityEmployees);
+                model.addAttribute("approvalDTO", new ContractApprovalDTO());
+                model.addAttribute("validationResult", validationResult);
 
-            return "admin/contracts/approve";
+                logger.info("Approve contract form loaded successfully for contract ID: {}", id);
+                return "admin/contracts/approve";
+            } else {
+                logger.warn("Contract not found or not inactive: {}", id);
+                return "redirect:/admin/dashboard";
+            }
+        } catch (Exception e) {
+            logger.error("Error loading approve contract form for contract ID: {}", id, e);
+            return "redirect:/admin/dashboard";
         }
-        return "redirect:/admin/dashboard";
     }
 
     @PostMapping("/contracts/approve/{id}")
@@ -103,13 +134,19 @@ public class AdminController {
                                   RedirectAttributes redirectAttributes,
                                   Model model) {
 
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to approve contract ID: {}",
+                currentEmployee.getEmail(), id);
+
         Optional<Contract> contract = contractService.getContractById(id);
         if (contract.isEmpty()) {
+            logger.warn("Contract not found for approval: {}", id);
             redirectAttributes.addFlashAttribute("error", "Контракт не найден");
             return "redirect:/admin/dashboard";
         }
 
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in contract approval for contract ID: {}", id);
             List<Employee> securityEmployees = employeeService.getSecurityEmployees();
             ValidationResult validationResult = contractService.validateContractForApproval(id);
 
@@ -123,11 +160,16 @@ public class AdminController {
         try {
             Contract approved = contractService.approveContract(id, approvalDTO);
             if (approved != null) {
+                logger.info("Contract ID: {} approved successfully by admin: {}",
+                        id, currentEmployee.getEmail());
                 redirectAttributes.addFlashAttribute("success", "Контракт успешно одобрен и расписание создано");
             } else {
+                logger.error("Failed to approve contract ID: {}", id);
                 redirectAttributes.addFlashAttribute("error", "Контракт не найден");
             }
         } catch (RuntimeException e) {
+            logger.error("Error approving contract ID: {} by admin: {}",
+                    id, currentEmployee.getEmail(), e);
             redirectAttributes.addFlashAttribute("error", e.getMessage());
 
             List<Employee> securityEmployees = employeeService.getSecurityEmployees();
@@ -148,13 +190,23 @@ public class AdminController {
 
     @GetMapping("/clients")
     public String clientsList(Model model) {
-        List<Client> clients = clientService.getAllClients();
-        model.addAttribute("clients", clients);
-        return "admin/clients/list";
+        logger.info("Accessing clients list");
+
+        try {
+            List<Client> clients = clientService.getAllClients();
+            model.addAttribute("clients", clients);
+            logger.info("Loaded {} clients", clients.size());
+            return "admin/clients/list";
+        } catch (Exception e) {
+            logger.error("Error loading clients list", e);
+            model.addAttribute("error", "Ошибка при загрузке списка клиентов");
+            return "admin/clients/list";
+        }
     }
 
     @GetMapping("/clients/create")
     public String showCreateClientForm(Model model) {
+        logger.info("Showing create client form");
         model.addAttribute("clientDTO", new ClientDTO());
         return "admin/clients/create";
     }
@@ -163,22 +215,38 @@ public class AdminController {
     public String createClient(@Valid @ModelAttribute ClientDTO clientDTO,
                                BindingResult bindingResult,
                                RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to create client: {}",
+                currentEmployee.getEmail(), clientDTO.getEmail());
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in client creation for email: {}", clientDTO.getEmail());
             return "admin/clients/create";
         }
 
         if (clientService.existsByEmail(clientDTO.getEmail())) {
+            logger.warn("Client with email already exists: {}", clientDTO.getEmail());
             redirectAttributes.addFlashAttribute("error", "Клиент с таким email уже существует");
             return "redirect:/admin/clients/create";
         }
 
-        clientService.createClient(clientDTO);
-        redirectAttributes.addFlashAttribute("success", "Клиент успешно создан");
+        try {
+            clientService.createClient(clientDTO);
+            logger.info("Client created successfully: {}", clientDTO.getEmail());
+            redirectAttributes.addFlashAttribute("success", "Клиент успешно создан");
+        } catch (Exception e) {
+            logger.error("Error creating client: {}", clientDTO.getEmail(), e);
+            redirectAttributes.addFlashAttribute("error", "Ошибка при создании клиента");
+        }
+
         return "redirect:/admin/clients";
     }
 
     @GetMapping("/clients/edit/{id}")
     public String showEditClientForm(@PathVariable Long id, Model model) {
+        logger.info("Showing edit client form for ID: {}", id);
+
         Optional<Client> client = clientService.getClientById(id);
         if (client.isPresent()) {
             Client c = client.get();
@@ -192,8 +260,11 @@ public class AdminController {
             clientDTO.setAddress(c.getAddress());
 
             model.addAttribute("clientDTO", clientDTO);
+            logger.info("Edit client form loaded for ID: {}", id);
             return "admin/clients/edit";
         }
+
+        logger.warn("Client not found for editing: {}", id);
         return "redirect:/admin/clients";
     }
 
@@ -202,26 +273,53 @@ public class AdminController {
                                @Valid @ModelAttribute ClientDTO clientDTO,
                                BindingResult bindingResult,
                                RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to update client ID: {}",
+                currentEmployee.getEmail(), id);
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in client update for ID: {}", id);
             return "admin/clients/edit";
         }
 
-        Client updated = clientService.updateClient(id, clientDTO);
-        if (updated != null) {
-            redirectAttributes.addFlashAttribute("success", "Клиент успешно обновлен");
-        } else {
+        try {
+            Client updated = clientService.updateClient(id, clientDTO);
+            if (updated != null) {
+                logger.info("Client ID: {} updated successfully", id);
+                redirectAttributes.addFlashAttribute("success", "Клиент успешно обновлен");
+            } else {
+                logger.error("Failed to update client ID: {}", id);
+                redirectAttributes.addFlashAttribute("error", "Ошибка при обновлении клиента");
+            }
+        } catch (Exception e) {
+            logger.error("Error updating client ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при обновлении клиента");
         }
+
         return "redirect:/admin/clients";
     }
 
     @PostMapping("/clients/delete/{id}")
     public String deleteClient(@PathVariable Long id, RedirectAttributes redirectAttributes) {
-        if (clientService.deleteClient(id)) {
-            redirectAttributes.addFlashAttribute("success", "Клиент успешно удален");
-        } else {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to delete client ID: {}",
+                currentEmployee.getEmail(), id);
+
+        try {
+            if (clientService.deleteClient(id)) {
+                logger.info("Client ID: {} deleted successfully", id);
+                redirectAttributes.addFlashAttribute("success", "Клиент успешно удален");
+            } else {
+                logger.warn("Failed to delete client ID: {}", id);
+                redirectAttributes.addFlashAttribute("error", "Ошибка при удалении клиента");
+            }
+        } catch (Exception e) {
+            logger.error("Error deleting client ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при удалении клиента");
         }
+
         return "redirect:/admin/clients";
     }
 
@@ -229,61 +327,55 @@ public class AdminController {
 
     @GetMapping("/employees")
     public String employeesList(Model model) {
-        List<Employee> employees = employeeService.getAllEmployees();
-        model.addAttribute("employees", employees);
-        return "admin/employees/list";
-    }
+        logger.info("Accessing employees list");
 
-    @GetMapping("/employees/create")
-    public String showCreateEmployeeForm(Model model) {
-        model.addAttribute("employeeDTO", new EmployeeDTO());
-        return "admin/employees/create";
+        try {
+            List<Employee> employees = employeeService.getAllEmployees();
+            model.addAttribute("employees", employees);
+            logger.info("Loaded {} employees", employees.size());
+            return "admin/employees/list";
+        } catch (Exception e) {
+            logger.error("Error loading employees list", e);
+            model.addAttribute("error", "Ошибка при загрузке списка сотрудников");
+            return "admin/employees/list";
+        }
     }
 
     @PostMapping("/employees/create")
     public String createEmployee(@Valid @ModelAttribute EmployeeDTO employeeDTO,
                                  BindingResult bindingResult,
                                  RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to create employee: {}",
+                currentEmployee.getEmail(), employeeDTO.getEmail());
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in employee creation for email: {}", employeeDTO.getEmail());
             return "admin/employees/create";
         }
 
         if (employeeService.existsByEmail(employeeDTO.getEmail())) {
+            logger.warn("Employee with email already exists: {}", employeeDTO.getEmail());
             redirectAttributes.addFlashAttribute("error", "Сотрудник с таким email уже существует");
             return "redirect:/admin/employees/create";
         }
 
         if (employeeService.existsByLogin(employeeDTO.getLogin())) {
+            logger.warn("Employee with login already exists: {}", employeeDTO.getLogin());
             redirectAttributes.addFlashAttribute("error", "Сотрудник с таким логином уже существует");
             return "redirect:/admin/employees/create";
         }
 
-        employeeService.createEmployee(employeeDTO);
-        redirectAttributes.addFlashAttribute("success", "Сотрудник успешно создан");
-        return "redirect:/admin/employees";
-    }
-
-    @GetMapping("/employees/edit/{id}")
-    public String showEditEmployeeForm(@PathVariable Long id, Model model) {
-        Optional<Employee> employee = employeeService.getEmployeeById(id);
-        if (employee.isPresent()) {
-            Employee e = employee.get();
-            EmployeeDTO employeeDTO = new EmployeeDTO();
-            employeeDTO.setId(e.getId());
-            employeeDTO.setLastName(e.getLastName());
-            employeeDTO.setFirstName(e.getFirstName());
-            employeeDTO.setPatronymic(e.getPatronymic());
-            employeeDTO.setPassportSeries(e.getPassportSeries());
-            employeeDTO.setPassportNumber(e.getPassportNumber());
-            employeeDTO.setPhone(e.getPhone());
-            employeeDTO.setEmail(e.getEmail());
-            employeeDTO.setLogin(e.getLogin());
-            employeeDTO.setPosition(e.getPosition());
-            employeeDTO.setIsAdmin(e.getIsAdmin());
-
-            model.addAttribute("employeeDTO", employeeDTO);
-            return "admin/employees/edit";
+        try {
+            employeeService.createEmployee(employeeDTO);
+            logger.info("Employee created successfully: {}", employeeDTO.getEmail());
+            redirectAttributes.addFlashAttribute("success", "Сотрудник успешно создан");
+        } catch (Exception e) {
+            logger.error("Error creating employee: {}", employeeDTO.getEmail(), e);
+            redirectAttributes.addFlashAttribute("error", "Ошибка при создании сотрудника");
         }
+
         return "redirect:/admin/employees";
     }
 
@@ -292,26 +384,53 @@ public class AdminController {
                                  @Valid @ModelAttribute EmployeeDTO employeeDTO,
                                  BindingResult bindingResult,
                                  RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to update employee ID: {}",
+                currentEmployee.getEmail(), id);
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in employee update for ID: {}", id);
             return "admin/employees/edit";
         }
 
-        Employee updated = employeeService.updateEmployee(id, employeeDTO);
-        if (updated != null) {
-            redirectAttributes.addFlashAttribute("success", "Сотрудник успешно обновлен");
-        } else {
+        try {
+            Employee updated = employeeService.updateEmployee(id, employeeDTO);
+            if (updated != null) {
+                logger.info("Employee ID: {} updated successfully", id);
+                redirectAttributes.addFlashAttribute("success", "Сотрудник успешно обновлен");
+            } else {
+                logger.error("Failed to update employee ID: {}", id);
+                redirectAttributes.addFlashAttribute("error", "Ошибка при обновлении сотрудника");
+            }
+        } catch (Exception e) {
+            logger.error("Error updating employee ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при обновлении сотрудника");
         }
+
         return "redirect:/admin/employees";
     }
 
     @PostMapping("/employees/delete/{id}")
     public String deleteEmployee(@PathVariable Long id, RedirectAttributes redirectAttributes) {
-        if (employeeService.deleteEmployee(id)) {
-            redirectAttributes.addFlashAttribute("success", "Сотрудник успешно удален");
-        } else {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to delete employee ID: {}",
+                currentEmployee.getEmail(), id);
+
+        try {
+            if (employeeService.deleteEmployee(id)) {
+                logger.info("Employee ID: {} deleted successfully", id);
+                redirectAttributes.addFlashAttribute("success", "Сотрудник успешно удален");
+            } else {
+                logger.warn("Failed to delete employee ID: {}", id);
+                redirectAttributes.addFlashAttribute("error", "Ошибка при удалении сотрудника");
+            }
+        } catch (Exception e) {
+            logger.error("Error deleting employee ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при удалении сотрудника");
         }
+
         return "redirect:/admin/employees";
     }
 
@@ -319,20 +438,18 @@ public class AdminController {
 
     @GetMapping("/contracts")
     public String contractsList(Model model) {
-        List<Contract> contracts = contractService.getAllContracts();
-        model.addAttribute("contracts", contracts);
-        return "admin/contracts/list";
-    }
+        logger.info("Accessing contracts list");
 
-    @GetMapping("/contracts/create")
-    public String showCreateContractForm(Model model) {
-        List<Client> clients = clientService.getAllClients();
-        List<ServiceEntity> services = serviceService.getAllServices();
-
-        model.addAttribute("contractDTO", new ContractDTO());
-        model.addAttribute("clients", clients);
-        model.addAttribute("services", services);
-        return "admin/contracts/create";
+        try {
+            List<Contract> contracts = contractService.getAllContracts();
+            model.addAttribute("contracts", contracts);
+            logger.info("Loaded {} contracts", contracts.size());
+            return "admin/contracts/list";
+        } catch (Exception e) {
+            logger.error("Error loading contracts list", e);
+            model.addAttribute("error", "Ошибка при загрузке списка договоров");
+            return "admin/contracts/list";
+        }
     }
 
     @PostMapping("/contracts/create")
@@ -341,7 +458,12 @@ public class AdminController {
                                  RedirectAttributes redirectAttributes,
                                  Model model) {
 
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to create contract for client ID: {}",
+                currentEmployee.getEmail(), contractDTO.getClientId());
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in contract creation");
             List<Client> clients = clientService.getAllClients();
             List<ServiceEntity> services = serviceService.getAllServices();
             model.addAttribute("clients", clients);
@@ -349,37 +471,20 @@ public class AdminController {
             return "admin/contracts/create";
         }
 
-        Contract created = contractService.createContract(contractDTO);
-        if (created != null) {
-            redirectAttributes.addFlashAttribute("success", "Договор успешно создан");
-        } else {
+        try {
+            Contract created = contractService.createContract(contractDTO);
+            if (created != null) {
+                logger.info("Contract created successfully with ID: {}", created.getId());
+                redirectAttributes.addFlashAttribute("success", "Договор успешно создан");
+            } else {
+                logger.error("Failed to create contract");
+                redirectAttributes.addFlashAttribute("error", "Ошибка при создании договора");
+            }
+        } catch (Exception e) {
+            logger.error("Error creating contract", e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при создании договора");
         }
-        return "redirect:/admin/contracts";
-    }
 
-    @GetMapping("/contracts/edit/{id}")
-    public String showEditContractForm(@PathVariable Long id, Model model) {
-        Optional<Contract> contract = contractService.getContractById(id);
-        if (contract.isPresent()) {
-            Contract c = contract.get();
-            ContractDTO contractDTO = new ContractDTO();
-            contractDTO.setId(c.getId());
-            contractDTO.setClientId(c.getClient().getId());
-            contractDTO.setServiceId(c.getService().getId());
-            contractDTO.setStartDate(c.getStartDate());
-            contractDTO.setEndDate(c.getEndDate());
-            contractDTO.setTotalAmount(c.getTotalAmount() != null ? c.getTotalAmount().doubleValue() : null);
-            contractDTO.setStatus(c.getStatus());
-
-            List<Client> clients = clientService.getAllClients();
-            List<ServiceEntity> services = serviceService.getAllServices();
-
-            model.addAttribute("contractDTO", contractDTO);
-            model.addAttribute("clients", clients);
-            model.addAttribute("services", services);
-            return "admin/contracts/edit";
-        }
         return "redirect:/admin/contracts";
     }
 
@@ -390,7 +495,12 @@ public class AdminController {
                                  RedirectAttributes redirectAttributes,
                                  Model model) {
 
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to update contract ID: {}",
+                currentEmployee.getEmail(), id);
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in contract update for ID: {}", id);
             List<Client> clients = clientService.getAllClients();
             List<ServiceEntity> services = serviceService.getAllServices();
             model.addAttribute("clients", clients);
@@ -398,74 +508,77 @@ public class AdminController {
             return "admin/contracts/edit";
         }
 
-        Contract updated = contractService.updateContract(id, contractDTO);
-        if (updated != null) {
-            redirectAttributes.addFlashAttribute("success", "Договор успешно обновлен");
-        } else {
+        try {
+            Contract updated = contractService.updateContract(id, contractDTO);
+            if (updated != null) {
+                logger.info("Contract ID: {} updated successfully", id);
+                redirectAttributes.addFlashAttribute("success", "Договор успешно обновлен");
+            } else {
+                logger.error("Failed to update contract ID: {}", id);
+                redirectAttributes.addFlashAttribute("error", "Ошибка при обновлении договора");
+            }
+        } catch (Exception e) {
+            logger.error("Error updating contract ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при обновлении договора");
         }
-        return "redirect:/admin/contracts";
-    }
 
-    @GetMapping("/contracts/delete/{id}")
-    public String showDeleteContractConfirmation(@PathVariable Long id, Model model) {
-        try {
-            ContractDeletionInfo deletionInfo = contractService.getDeletionInfo(id);
-            model.addAttribute("deletionInfo", deletionInfo);
-            return "admin/contracts/delete-confirm";
-        } catch (RuntimeException e) {
-            return "redirect:/admin/contracts";
-        }
+        return "redirect:/admin/contracts";
     }
 
     @PostMapping("/contracts/delete/{id}")
     public String deleteContract(@PathVariable Long id,
                                  @RequestParam(defaultValue = "false") boolean confirm,
                                  RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to delete contract ID: {}",
+                currentEmployee.getEmail(), id);
+
         if (!confirm) {
+            logger.warn("Delete confirmation not provided for contract ID: {}", id);
             redirectAttributes.addFlashAttribute("error", "Удаление отменено. Подтвердите удаление.");
             return "redirect:/admin/contracts/delete/" + id;
         }
 
         try {
             if (contractService.deleteContract(id)) {
+                logger.info("Contract ID: {} deleted successfully", id);
                 redirectAttributes.addFlashAttribute("success", "Контракт и все связанные данные успешно удалены");
             } else {
+                logger.warn("Contract not found for deletion: {}", id);
                 redirectAttributes.addFlashAttribute("error", "Контракт не найден");
             }
         } catch (Exception e) {
+            logger.error("Error deleting contract ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при удалении контракта: " + e.getMessage());
         }
 
         return "redirect:/admin/contracts";
     }
 
-
     // ==================== ОХРАНЯЕМЫЕ ОБЪЕКТЫ ====================
 
     @GetMapping("/objects")
     public String objectsList(Model model) {
-        List<GuardObject> objects = guardObjectService.getAllGuardObjects();
-        model.addAttribute("objects", objects);
+        logger.info("Accessing guard objects list");
 
-        Map<Long, Boolean> canDelete = new HashMap<>();
-        for (GuardObject object : objects) {
-            canDelete.put(object.getId(), guardObjectService.canDeleteGuardObject(object.getId()));
+        try {
+            List<GuardObject> objects = guardObjectService.getAllGuardObjects();
+            model.addAttribute("objects", objects);
+
+            Map<Long, Boolean> canDelete = new HashMap<>();
+            for (GuardObject object : objects) {
+                canDelete.put(object.getId(), guardObjectService.canDeleteGuardObject(object.getId()));
+            }
+            model.addAttribute("canDelete", canDelete);
+
+            logger.info("Loaded {} guard objects", objects.size());
+            return "admin/objects/list";
+        } catch (Exception e) {
+            logger.error("Error loading guard objects list", e);
+            model.addAttribute("error", "Ошибка при загрузке списка объектов");
+            return "admin/objects/list";
         }
-        model.addAttribute("canDelete", canDelete);
-
-        return "admin/objects/list";
-    }
-
-    @GetMapping("/objects/create")
-    public String showCreateObjectForm(Model model) {
-        List<Client> clients = clientService.getAllClients();
-        List<Contract> contracts = contractService.getAllContracts();
-
-        model.addAttribute("guardObjectDTO", new GuardObjectDTO());
-        model.addAttribute("clients", clients);
-        model.addAttribute("contracts", contracts);
-        return "admin/objects/create";
     }
 
     @PostMapping("/objects/create")
@@ -474,7 +587,12 @@ public class AdminController {
                                RedirectAttributes redirectAttributes,
                                Model model) {
 
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to create guard object: {}",
+                currentEmployee.getEmail(), guardObjectDTO.getName());
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in guard object creation");
             List<Client> clients = clientService.getAllClients();
             List<Contract> contracts = contractService.getAllContracts();
             model.addAttribute("clients", clients);
@@ -485,11 +603,14 @@ public class AdminController {
         try {
             GuardObject created = guardObjectService.createGuardObject(guardObjectDTO);
             if (created != null) {
+                logger.info("Guard object created successfully with ID: {}", created.getId());
                 redirectAttributes.addFlashAttribute("success", "Объект успешно создан");
             } else {
+                logger.error("Failed to create guard object");
                 redirectAttributes.addFlashAttribute("error", "Ошибка при создании объекта");
             }
         } catch (RuntimeException e) {
+            logger.error("Error creating guard object", e);
             redirectAttributes.addFlashAttribute("error", e.getMessage());
 
             List<Client> clients = clientService.getAllClients();
@@ -502,32 +623,6 @@ public class AdminController {
         return "redirect:/admin/objects";
     }
 
-    @GetMapping("/objects/edit/{id}")
-    public String showEditObjectForm(@PathVariable Long id, Model model) {
-        Optional<GuardObject> guardObject = guardObjectService.getGuardObjectById(id);
-        if (guardObject.isPresent()) {
-            GuardObject obj = guardObject.get();
-            GuardObjectDTO guardObjectDTO = new GuardObjectDTO();
-            guardObjectDTO.setId(obj.getId());
-            guardObjectDTO.setClientId(obj.getClient().getId());
-            guardObjectDTO.setContractId(obj.getContract().getId());
-            guardObjectDTO.setName(obj.getName());
-            guardObjectDTO.setAddress(obj.getAddress());
-            guardObjectDTO.setLatitude(obj.getLatitude());
-            guardObjectDTO.setLongitude(obj.getLongitude());
-            guardObjectDTO.setDescription(obj.getDescription());
-
-            List<Client> clients = clientService.getAllClients();
-            List<Contract> contracts = contractService.getAllContracts();
-
-            model.addAttribute("guardObjectDTO", guardObjectDTO);
-            model.addAttribute("clients", clients);
-            model.addAttribute("contracts", contracts);
-            return "admin/objects/edit";
-        }
-        return "redirect:/admin/objects";
-    }
-
     @PostMapping("/objects/edit/{id}")
     public String updateObject(@PathVariable Long id,
                                @Valid @ModelAttribute GuardObjectDTO guardObjectDTO,
@@ -535,7 +630,12 @@ public class AdminController {
                                RedirectAttributes redirectAttributes,
                                Model model) {
 
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to update guard object ID: {}",
+                currentEmployee.getEmail(), id);
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in guard object update for ID: {}", id);
             List<Client> clients = clientService.getAllClients();
             List<Contract> contracts = contractService.getAllContracts();
             model.addAttribute("clients", clients);
@@ -546,11 +646,14 @@ public class AdminController {
         try {
             GuardObject updated = guardObjectService.updateGuardObject(id, guardObjectDTO);
             if (updated != null) {
+                logger.info("Guard object ID: {} updated successfully", id);
                 redirectAttributes.addFlashAttribute("success", "Объект успешно обновлен");
             } else {
+                logger.warn("Guard object not found for update: {}", id);
                 redirectAttributes.addFlashAttribute("error", "Объект не найден");
             }
         } catch (RuntimeException e) {
+            logger.error("Error updating guard object ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", e.getMessage());
 
             List<Client> clients = clientService.getAllClients();
@@ -565,19 +668,33 @@ public class AdminController {
 
     @PostMapping("/objects/delete/{id}")
     public String deleteObject(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to delete guard object ID: {}",
+                currentEmployee.getEmail(), id);
+
         boolean canDelete = guardObjectService.canDeleteGuardObject(id);
 
         if (!canDelete) {
+            logger.warn("Cannot delete guard object ID: {} - related data exists", id);
             redirectAttributes.addFlashAttribute("error",
                     "Невозможно удалить объект: существуют связанные контракты или расписания");
             return "redirect:/admin/objects";
         }
 
-        if (guardObjectService.deleteGuardObject(id)) {
-            redirectAttributes.addFlashAttribute("success", "Объект успешно удален");
-        } else {
+        try {
+            if (guardObjectService.deleteGuardObject(id)) {
+                logger.info("Guard object ID: {} deleted successfully", id);
+                redirectAttributes.addFlashAttribute("success", "Объект успешно удален");
+            } else {
+                logger.error("Failed to delete guard object ID: {}", id);
+                redirectAttributes.addFlashAttribute("error", "Ошибка при удалении объекта");
+            }
+        } catch (Exception e) {
+            logger.error("Error deleting guard object ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при удалении объекта");
         }
+
         return "redirect:/admin/objects";
     }
 
@@ -585,55 +702,50 @@ public class AdminController {
 
     @GetMapping("/services")
     public String servicesList(Model model) {
-        List<ServiceEntity> services = serviceService.getAllServices();
-        model.addAttribute("services", services);
-        return "admin/services/list";
-    }
+        logger.info("Accessing services list");
 
-    @GetMapping("/services/create")
-    public String showCreateServiceForm(Model model) {
-        model.addAttribute("serviceDTO", new ServiceDTO());
-        return "admin/services/create";
+        try {
+            List<ServiceEntity> services = serviceService.getAllServices();
+            model.addAttribute("services", services);
+            logger.info("Loaded {} services", services.size());
+            return "admin/services/list";
+        } catch (Exception e) {
+            logger.error("Error loading services list", e);
+            model.addAttribute("error", "Ошибка при загрузке списка услуг");
+            return "admin/services/list";
+        }
     }
 
     @PostMapping("/services/create")
     public String createService(@Valid @ModelAttribute ServiceDTO serviceDTO,
                                 BindingResult bindingResult,
                                 RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to create service: {}",
+                currentEmployee.getEmail(), serviceDTO.getName());
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in service creation");
             return "admin/services/create";
         }
 
         try {
             if (serviceService.existsByName(serviceDTO.getName())) {
+                logger.warn("Service with name already exists: {}", serviceDTO.getName());
                 redirectAttributes.addFlashAttribute("error", "Услуга с таким названием уже существует");
                 return "redirect:/admin/services/create";
             }
 
             serviceService.createService(serviceDTO);
+            logger.info("Service created successfully: {}", serviceDTO.getName());
             redirectAttributes.addFlashAttribute("success", "Услуга успешно создана");
         } catch (RuntimeException e) {
+            logger.error("Error creating service: {}", serviceDTO.getName(), e);
             redirectAttributes.addFlashAttribute("error", e.getMessage());
             return "redirect:/admin/services/create";
         }
 
-        return "redirect:/admin/services";
-    }
-
-    @GetMapping("/services/edit/{id}")
-    public String showEditServiceForm(@PathVariable Long id, Model model) {
-        Optional<ServiceEntity> service = serviceService.getServiceById(id);
-        if (service.isPresent()) {
-            ServiceEntity s = service.get();
-            ServiceDTO serviceDTO = new ServiceDTO();
-            serviceDTO.setId(s.getId());
-            serviceDTO.setName(s.getName());
-            serviceDTO.setDescription(s.getDescription());
-            serviceDTO.setPrice(s.getPrice());
-
-            model.addAttribute("serviceDTO", serviceDTO);
-            return "admin/services/edit";
-        }
         return "redirect:/admin/services";
     }
 
@@ -642,7 +754,13 @@ public class AdminController {
                                 @Valid @ModelAttribute ServiceDTO serviceDTO,
                                 BindingResult bindingResult,
                                 RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to update service ID: {}",
+                currentEmployee.getEmail(), id);
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in service update for ID: {}", id);
             return "admin/services/edit";
         }
 
@@ -652,6 +770,7 @@ public class AdminController {
                 ServiceEntity currentService = existingService.get();
                 if (!currentService.getName().equals(serviceDTO.getName()) &&
                         serviceService.existsByName(serviceDTO.getName())) {
+                    logger.warn("Service with name already exists: {}", serviceDTO.getName());
                     redirectAttributes.addFlashAttribute("error", "Услуга с таким названием уже существует");
                     return "redirect:/admin/services/edit/" + id;
                 }
@@ -659,11 +778,14 @@ public class AdminController {
 
             ServiceEntity updated = serviceService.updateService(id, serviceDTO);
             if (updated != null) {
+                logger.info("Service ID: {} updated successfully", id);
                 redirectAttributes.addFlashAttribute("success", "Услуга успешно обновлена");
             } else {
+                logger.warn("Service not found for update: {}", id);
                 redirectAttributes.addFlashAttribute("error", "Услуга не найдена");
             }
         } catch (RuntimeException e) {
+            logger.error("Error updating service ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", e.getMessage());
             return "redirect:/admin/services/edit/" + id;
         }
@@ -673,39 +795,43 @@ public class AdminController {
 
     @PostMapping("/services/delete/{id}")
     public String deleteService(@PathVariable Long id, RedirectAttributes redirectAttributes) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to delete service ID: {}",
+                currentEmployee.getEmail(), id);
+
         try {
             if (serviceService.deleteService(id)) {
+                logger.info("Service ID: {} deleted successfully", id);
                 redirectAttributes.addFlashAttribute("success", "Услуга успешно удалена");
             } else {
+                logger.warn("Service not found for deletion: {}", id);
                 redirectAttributes.addFlashAttribute("error", "Услуга не найдена");
             }
         } catch (Exception e) {
+            logger.error("Error deleting service ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при удалении услуги: " + e.getMessage());
         }
+
         return "redirect:/admin/services";
     }
 
-    @Autowired
-    private ScheduleService scheduleService;
-
-// ==================== ГРАФИКИ РАБОТЫ ====================
+    // ==================== ГРАФИКИ РАБОТЫ ====================
 
     @GetMapping("/schedules")
     public String schedulesList(Model model) {
-        List<Schedule> schedules = scheduleService.getAllSchedules();
-        model.addAttribute("schedules", schedules);
-        return "admin/schedules/list";
-    }
+        logger.info("Accessing schedules list");
 
-    @GetMapping("/schedules/create")
-    public String showCreateScheduleForm(Model model) {
-        List<Employee> employees = employeeService.getAllEmployees();
-        List<GuardObject> guardObjects = guardObjectService.getAllGuardObjects();
-
-        model.addAttribute("scheduleDTO", new ScheduleDTO());
-        model.addAttribute("employees", employees);
-        model.addAttribute("guardObjects", guardObjects);
-        return "admin/schedules/create";
+        try {
+            List<Schedule> schedules = scheduleService.getAllSchedules();
+            model.addAttribute("schedules", schedules);
+            logger.info("Loaded {} schedules", schedules.size());
+            return "admin/schedules/list";
+        } catch (Exception e) {
+            logger.error("Error loading schedules list", e);
+            model.addAttribute("error", "Ошибка при загрузке списка графиков работы");
+            return "admin/schedules/list";
+        }
     }
 
     @PostMapping("/schedules/create")
@@ -714,7 +840,12 @@ public class AdminController {
                                  RedirectAttributes redirectAttributes,
                                  Model model) {
 
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to create schedule for employee ID: {} and object ID: {}",
+                currentEmployee.getEmail(), scheduleDTO.getEmployeeId(), scheduleDTO.getGuardObjectId());
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in schedule creation");
             List<Employee> employees = employeeService.getAllEmployees();
             List<GuardObject> guardObjects = guardObjectService.getAllGuardObjects();
             model.addAttribute("employees", employees);
@@ -725,40 +856,18 @@ public class AdminController {
         try {
             Schedule created = scheduleService.createSchedule(scheduleDTO);
             if (created != null) {
+                logger.info("Schedule created successfully with ID: {}", created.getId());
                 redirectAttributes.addFlashAttribute("success", "График работы успешно создан");
             } else {
+                logger.error("Failed to create schedule");
                 redirectAttributes.addFlashAttribute("error", "Ошибка при создании графика работы");
             }
         } catch (RuntimeException e) {
+            logger.error("Error creating schedule", e);
             redirectAttributes.addFlashAttribute("error", e.getMessage());
             return "redirect:/admin/schedules/create";
         }
 
-        return "redirect:/admin/schedules";
-    }
-
-    @GetMapping("/schedules/edit/{id}")
-    public String showEditScheduleForm(@PathVariable Long id, Model model) {
-        Optional<Schedule> schedule = scheduleService.getScheduleById(id);
-        if (schedule.isPresent()) {
-            Schedule s = schedule.get();
-            ScheduleDTO scheduleDTO = new ScheduleDTO();
-            scheduleDTO.setId(s.getId());
-            scheduleDTO.setEmployeeId(s.getEmployee().getId());
-            scheduleDTO.setGuardObjectId(s.getGuardObject().getId());
-            scheduleDTO.setDate(s.getDate());
-            scheduleDTO.setStartTime(s.getStartTime());
-            scheduleDTO.setEndTime(s.getEndTime());
-            scheduleDTO.setNotes(s.getNotes());
-
-            List<Employee> employees = employeeService.getAllEmployees();
-            List<GuardObject> guardObjects = guardObjectService.getAllGuardObjects();
-
-            model.addAttribute("scheduleDTO", scheduleDTO);
-            model.addAttribute("employees", employees);
-            model.addAttribute("guardObjects", guardObjects);
-            return "admin/schedules/edit";
-        }
         return "redirect:/admin/schedules";
     }
 
@@ -769,7 +878,12 @@ public class AdminController {
                                  RedirectAttributes redirectAttributes,
                                  Model model) {
 
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to update schedule ID: {}",
+                currentEmployee.getEmail(), id);
+
         if (bindingResult.hasErrors()) {
+            logger.warn("Validation errors in schedule update for ID: {}", id);
             List<Employee> employees = employeeService.getAllEmployees();
             List<GuardObject> guardObjects = guardObjectService.getAllGuardObjects();
             model.addAttribute("employees", employees);
@@ -780,11 +894,14 @@ public class AdminController {
         try {
             Schedule updated = scheduleService.updateSchedule(id, scheduleDTO);
             if (updated != null) {
+                logger.info("Schedule ID: {} updated successfully", id);
                 redirectAttributes.addFlashAttribute("success", "График работы успешно обновлен");
             } else {
+                logger.warn("Schedule not found for update: {}", id);
                 redirectAttributes.addFlashAttribute("error", "График работы не найден");
             }
         } catch (RuntimeException e) {
+            logger.error("Error updating schedule ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", e.getMessage());
             return "redirect:/admin/schedules/edit/" + id;
         }
@@ -794,34 +911,54 @@ public class AdminController {
 
     @PostMapping("/schedules/delete/{id}")
     public String deleteSchedule(@PathVariable Long id, RedirectAttributes redirectAttributes) {
-        if (scheduleService.deleteSchedule(id)) {
-            redirectAttributes.addFlashAttribute("success", "График работы успешно удален");
-        } else {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} attempting to delete schedule ID: {}",
+                currentEmployee.getEmail(), id);
+
+        try {
+            if (scheduleService.deleteSchedule(id)) {
+                logger.info("Schedule ID: {} deleted successfully", id);
+                redirectAttributes.addFlashAttribute("success", "График работы успешно удален");
+            } else {
+                logger.error("Failed to delete schedule ID: {}", id);
+                redirectAttributes.addFlashAttribute("error", "Ошибка при удалении графика работы");
+            }
+        } catch (Exception e) {
+            logger.error("Error deleting schedule ID: {}", id, e);
             redirectAttributes.addFlashAttribute("error", "Ошибка при удалении графика работы");
         }
+
         return "redirect:/admin/schedules";
     }
-
-    @Autowired
-    private ReportService reportService;
 
     // ==================== ОТЧЕТЫ ====================
 
     @PostMapping("/reports/revenue")
     public ResponseEntity<byte[]> generateRevenueReport(@RequestParam LocalDate startDate,
                                                         @RequestParam LocalDate endDate) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} generating revenue report from {} to {}",
+                currentEmployee.getEmail(), startDate, endDate);
+
         try {
             byte[] excelBytes = reportService.generateRevenueReport(startDate, endDate);
 
             String filename = String.format("revenue_report_%s_%s.xlsx",
                     startDate, endDate);
 
+            logger.info("Revenue report generated successfully");
             return ResponseEntity.ok()
                     .header("Content-Disposition", "attachment; filename=" + filename)
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(excelBytes);
 
         } catch (IOException e) {
+            logger.error("Error generating revenue report", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (Exception e) {
+            logger.error("Unexpected error generating revenue report", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -829,18 +966,28 @@ public class AdminController {
     @PostMapping("/reports/contracts")
     public ResponseEntity<byte[]> generateContractsReport(@RequestParam LocalDate startDate,
                                                           @RequestParam LocalDate endDate) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} generating contracts report from {} to {}",
+                currentEmployee.getEmail(), startDate, endDate);
+
         try {
             byte[] excelBytes = reportService.generateContractsReport(startDate, endDate);
 
             String filename = String.format("contracts_report_%s_%s.xlsx",
                     startDate, endDate);
 
+            logger.info("Contracts report generated successfully");
             return ResponseEntity.ok()
                     .header("Content-Disposition", "attachment; filename=" + filename)
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(excelBytes);
 
         } catch (IOException e) {
+            logger.error("Error generating contracts report", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (Exception e) {
+            logger.error("Unexpected error generating contracts report", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
@@ -848,26 +995,39 @@ public class AdminController {
     @PostMapping("/reports/clients")
     public ResponseEntity<byte[]> generateClientsReport(@RequestParam LocalDate startDate,
                                                         @RequestParam LocalDate endDate) {
+
+        Employee currentEmployee = getCurrentEmployee();
+        logger.info("Admin {} generating clients report from {} to {}",
+                currentEmployee.getEmail(), startDate, endDate);
+
         try {
             byte[] excelBytes = reportService.generateClientsReport(startDate, endDate);
 
             String filename = String.format("clients_report_%s_%s.xlsx",
                     startDate, endDate);
 
+            logger.info("Clients report generated successfully");
             return ResponseEntity.ok()
                     .header("Content-Disposition", "attachment; filename=" + filename)
                     .contentType(MediaType.APPLICATION_OCTET_STREAM)
                     .body(excelBytes);
 
         } catch (IOException e) {
+            logger.error("Error generating clients report", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        } catch (Exception e) {
+            logger.error("Unexpected error generating clients report", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
 
     @GetMapping("/reports")
     public String reportsPage(Model model) {
+        logger.info("Accessing reports page");
+
         Employee employee = getCurrentEmployee();
         if (employee == null) {
+            logger.warn("Attempt to access reports page without authentication");
             return "redirect:/login";
         }
 
