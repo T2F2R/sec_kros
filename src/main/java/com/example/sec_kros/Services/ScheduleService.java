@@ -76,4 +76,8 @@ public class ScheduleService {
         }
         return false;
     }
+
+    public List<Schedule> getSchedulesByContractId(Long contractId) {
+        return scheduleRepository.findByGuardObject_Contract_Id(contractId);
+    }
 }

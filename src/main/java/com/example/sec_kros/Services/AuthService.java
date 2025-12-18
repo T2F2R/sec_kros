@@ -41,6 +41,10 @@ public class AuthService {
     }
 
     public String getRedirectUrl(String userType) {
+        if (userType == null) {
+            return "/login?error=true";
+        }
+
         switch (userType) {
             case "admin":
                 return "/admin/dashboard";

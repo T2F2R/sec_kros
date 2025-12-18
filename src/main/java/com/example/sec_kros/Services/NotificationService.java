@@ -33,10 +33,12 @@ public class NotificationService {
 
     public void markAllAsReadByClientId(Long clientId) {
         List<Notification> unreadNotifications = getUnreadNotificationsByClientId(clientId);
-        for (Notification notification : unreadNotifications) {
-            notification.setIsRead(true);
+        if (!unreadNotifications.isEmpty()) { // Добавляем проверку на пустой список
+            for (Notification notification : unreadNotifications) {
+                notification.setIsRead(true);
+            }
+            notificationRepository.saveAll(unreadNotifications);
         }
-        notificationRepository.saveAll(unreadNotifications);
     }
 
     public void deleteNotification(Long notificationId) {

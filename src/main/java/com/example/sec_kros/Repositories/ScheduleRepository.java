@@ -13,4 +13,5 @@ public interface ScheduleRepository extends JpaRepository<Schedule, Long> {
     List<Schedule> findByGuardObjectId(Long guardObjectId);
     @Query("SELECT COUNT(s) > 0 FROM Schedule s WHERE s.guardObject.id = :guardObjectId")
     boolean existsByGuardObjectId(@Param("guardObjectId") Long guardObjectId);
+    List<Schedule> findByGuardObject_Contract_Id(Long contractId);
 }

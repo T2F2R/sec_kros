@@ -1034,4 +1034,260 @@ public class AdminController {
         model.addAttribute("employee", employee);
         return "admin/reports";
     }
+
+    // ==================== ОХРАНЯЕМЫЕ ОБЪЕКТЫ ====================
+
+    @GetMapping("/objects/create")
+    public String showCreateObjectForm(Model model) {
+        logger.info("Showing create guard object form");
+
+        try {
+            List<Client> clients = clientService.getAllClients();
+            List<Contract> contracts = contractService.getAllContracts();
+
+            model.addAttribute("guardObjectDTO", new GuardObjectDTO());
+            model.addAttribute("clients", clients);
+            model.addAttribute("contracts", contracts);
+
+            logger.info("Create guard object form loaded with {} clients and {} contracts",
+                    clients.size(), contracts.size());
+            return "admin/objects/create";
+        } catch (Exception e) {
+            logger.error("Error loading create guard object form", e);
+            model.addAttribute("error", "Ошибка при загрузке формы создания объекта");
+            return "admin/objects/create";
+        }
+    }
+
+    @GetMapping("/objects/edit/{id}")
+    public String showEditObjectForm(@PathVariable Long id, Model model) {
+        logger.info("Showing edit guard object form for ID: {}", id);
+
+        try {
+            Optional<GuardObject> guardObject = guardObjectService.getGuardObjectById(id);
+            if (guardObject.isPresent()) {
+                GuardObject obj = guardObject.get();
+                GuardObjectDTO guardObjectDTO = new GuardObjectDTO();
+                guardObjectDTO.setId(obj.getId());
+                guardObjectDTO.setClientId(obj.getClient().getId());
+                guardObjectDTO.setContractId(obj.getContract().getId());
+                guardObjectDTO.setName(obj.getName());
+                guardObjectDTO.setAddress(obj.getAddress());
+                guardObjectDTO.setLatitude(obj.getLatitude());
+                guardObjectDTO.setLongitude(obj.getLongitude());
+                guardObjectDTO.setDescription(obj.getDescription());
+
+                List<Client> clients = clientService.getAllClients();
+                List<Contract> contracts = contractService.getAllContracts();
+
+                model.addAttribute("guardObjectDTO", guardObjectDTO);
+                model.addAttribute("clients", clients);
+                model.addAttribute("contracts", contracts);
+
+                logger.info("Edit guard object form loaded for ID: {}", id);
+                return "admin/objects/edit";
+            } else {
+                logger.warn("Guard object not found for editing: {}", id);
+                return "redirect:/admin/objects";
+            }
+        } catch (Exception e) {
+            logger.error("Error loading edit guard object form for ID: {}", id, e);
+            model.addAttribute("error", "Ошибка при загрузке формы редактирования объекта");
+            return "redirect:/admin/objects";
+        }
+    }
+
+// ==================== ДОГОВОРЫ ====================
+
+    @GetMapping("/contracts/create")
+    public String showCreateContractForm(Model model) {
+        logger.info("Showing create contract form");
+
+        try {
+            List<Client> clients = clientService.getAllClients();
+            List<ServiceEntity> services = serviceService.getAllServices();
+
+            model.addAttribute("contractDTO", new ContractDTO());
+            model.addAttribute("clients", clients);
+            model.addAttribute("services", services);
+
+            logger.info("Create contract form loaded with {} clients and {} services",
+                    clients.size(), services.size());
+            return "admin/contracts/create";
+        } catch (Exception e) {
+            logger.error("Error loading create contract form", e);
+            model.addAttribute("error", "Ошибка при загрузке формы создания договора");
+            return "admin/contracts/create";
+        }
+    }
+
+    @GetMapping("/contracts/edit/{id}")
+    public String showEditContractForm(@PathVariable Long id, Model model) {
+        logger.info("Showing edit contract form for ID: {}", id);
+
+        try {
+            Optional<Contract> contract = contractService.getContractById(id);
+            if (contract.isPresent()) {
+                Contract c = contract.get();
+                ContractDTO contractDTO = new ContractDTO();
+                contractDTO.setId(c.getId());
+                contractDTO.setClientId(c.getClient().getId());
+                contractDTO.setServiceId(c.getService().getId());
+                contractDTO.setStartDate(c.getStartDate());
+                contractDTO.setEndDate(c.getEndDate());
+                contractDTO.setStatus(c.getStatus());
+
+                List<Client> clients = clientService.getAllClients();
+                List<ServiceEntity> services = serviceService.getAllServices();
+
+                model.addAttribute("contractDTO", contractDTO);
+                model.addAttribute("clients", clients);
+                model.addAttribute("services", services);
+
+                logger.info("Edit contract form loaded for ID: {}", id);
+                return "admin/contracts/edit";
+            } else {
+                logger.warn("Contract not found for editing: {}", id);
+                return "redirect:/admin/contracts";
+            }
+        } catch (Exception e) {
+            logger.error("Error loading edit contract form for ID: {}", id, e);
+            model.addAttribute("error", "Ошибка при загрузке формы редактирования договора");
+            return "redirect:/admin/contracts";
+        }
+    }
+
+    @GetMapping("/contracts/delete/{id}")
+    public String showDeleteContractForm(@PathVariable Long id, Model model) {
+        logger.info("Showing delete contract form for ID: {}", id);
+
+        try {
+            Optional<Contract> contract = contractService.getContractById(id);
+            if (contract.isPresent()) {
+                Contract c = contract.get();
+
+                // Создаем объект с информацией об удалении
+                Map<String, Object> deletionInfo = new HashMap<>();
+                deletionInfo.put("contract", c);
+
+                // Получаем связанные объекты охраны
+                List<GuardObject> guardObjects = guardObjectService.getGuardObjectsByContractId(id);
+                deletionInfo.put("guardObjects", guardObjects);
+                deletionInfo.put("guardObjectsCount", guardObjects.size());
+
+                // Получаем связанные расписания
+                List<Schedule> schedules = scheduleService.getSchedulesByContractId(id);
+                deletionInfo.put("schedules", schedules);
+                deletionInfo.put("schedulesCount", schedules.size());
+
+                model.addAttribute("deletionInfo", deletionInfo);
+
+                logger.info("Delete contract form loaded for ID: {}", id);
+                return "admin/contracts/delete";
+            } else {
+                logger.warn("Contract not found for deletion: {}", id);
+                return "redirect:/admin/contracts";
+            }
+        } catch (Exception e) {
+            logger.error("Error loading delete contract form for ID: {}", id, e);
+            model.addAttribute("error", "Ошибка при загрузке формы удаления договора");
+            return "redirect:/admin/contracts";
+        }
+    }
+
+// ==================== СОТРУДНИКИ ====================
+
+    @GetMapping("/employees/create")
+    public String showCreateEmployeeForm(Model model) {
+        logger.info("Showing create employee form");
+
+        try {
+            model.addAttribute("employeeDTO", new EmployeeDTO());
+            logger.info("Create employee form loaded");
+            return "admin/employees/create";
+        } catch (Exception e) {
+            logger.error("Error loading create employee form", e);
+            model.addAttribute("error", "Ошибка при загрузке формы создания сотрудника");
+            return "admin/employees/create";
+        }
+    }
+
+    @GetMapping("/employees/edit/{id}")
+    public String showEditEmployeeForm(@PathVariable Long id, Model model) {
+        logger.info("Showing edit employee form for ID: {}", id);
+
+        try {
+            Optional<Employee> employee = employeeService.getEmployeeById(id);
+            if (employee.isPresent()) {
+                Employee emp = employee.get();
+                EmployeeDTO employeeDTO = new EmployeeDTO();
+                employeeDTO.setId(emp.getId());
+                employeeDTO.setLastName(emp.getLastName());
+                employeeDTO.setFirstName(emp.getFirstName());
+                employeeDTO.setPatronymic(emp.getPatronymic());
+                employeeDTO.setPhone(emp.getPhone());
+                employeeDTO.setEmail(emp.getEmail());
+                employeeDTO.setLogin(emp.getLogin());
+                employeeDTO.setPosition(emp.getPosition());
+
+                model.addAttribute("employeeDTO", employeeDTO);
+                logger.info("Edit employee form loaded for ID: {}", id);
+                return "admin/employees/edit";
+            } else {
+                logger.warn("Employee not found for editing: {}", id);
+                return "redirect:/admin/employees";
+            }
+        } catch (Exception e) {
+            logger.error("Error loading edit employee form for ID: {}", id, e);
+            model.addAttribute("error", "Ошибка при загрузке формы редактирования сотрудника");
+            return "redirect:/admin/employees";
+        }
+    }
+
+// ==================== УСЛУГИ ====================
+
+    @GetMapping("/services/create")
+    public String showCreateServiceForm(Model model) {
+        logger.info("Showing create service form");
+
+        try {
+            model.addAttribute("serviceDTO", new ServiceDTO());
+            logger.info("Create service form loaded");
+            return "admin/services/create";
+        } catch (Exception e) {
+            logger.error("Error loading create service form", e);
+            model.addAttribute("error", "Ошибка при загрузке формы создания услуги");
+            return "admin/services/create";
+        }
+    }
+
+    @GetMapping("/services/edit/{id}")
+    public String showEditServiceForm(@PathVariable Long id, Model model) {
+        logger.info("Showing edit service form for ID: {}", id);
+
+        try {
+            Optional<ServiceEntity> service = serviceService.getServiceById(id);
+            if (service.isPresent()) {
+                ServiceEntity s = service.get();
+                ServiceDTO serviceDTO = new ServiceDTO();
+                serviceDTO.setId(s.getId());
+                serviceDTO.setName(s.getName());
+                serviceDTO.setDescription(s.getDescription());
+                serviceDTO.setPrice(s.getPrice());
+
+                model.addAttribute("serviceDTO", serviceDTO);
+                logger.info("Edit service form loaded for ID: {}", id);
+                return "admin/services/edit";
+            } else {
+                logger.warn("Service not found for editing: {}", id);
+                return "redirect:/admin/services";
+            }
+        } catch (Exception e) {
+            logger.error("Error loading edit service form for ID: {}", id, e);
+            model.addAttribute("error", "Ошибка при загрузке формы редактирования услуги");
+            return "redirect:/admin/services";
+        }
+    }
+
+
 }

@@ -43,7 +43,7 @@ public class ContractService {
     private NotificationRepository notificationRepository;
 
     @Autowired
-    private EmailService emailService; // Добавляем EmailService
+    private EmailService emailService;
 
     public List<Contract> getAllContracts() {
         return contractRepository.findAll();
@@ -55,17 +55,21 @@ public class ContractService {
 
     public Contract createContract(Long clientId, Long serviceId, Contract contract) {
         Optional<Client> client = clientRepository.findById(clientId);
-        Optional<ServiceEntity> service = serviceRepository.findById(serviceId);
-
-        if (client.isPresent() && service.isPresent()) {
-            contract.setClient(client.get());
-            contract.setService(service.get());
-            contract.setCreatedAt(LocalDateTime.now());
-            contract.setStatus("active");
-
-            return contractRepository.save(contract);
+        if (client.isEmpty()) {
+            return null;
         }
-        return null;
+
+        Optional<ServiceEntity> service = serviceRepository.findById(serviceId);
+        if (service.isEmpty()) {
+            return null;
+        }
+
+        contract.setClient(client.get());
+        contract.setService(service.get());
+        contract.setCreatedAt(LocalDateTime.now());
+        contract.setStatus("active");
+
+        return contractRepository.save(contract);
     }
 
     public Contract updateContract(Long id, Contract contractDetails) {
@@ -243,6 +247,10 @@ public class ContractService {
         return contractRepository.findById(contractId)
                 .map(contract -> {
                     try {
+                        // Кэшируем объекты для избежания повторных вызовов репозиториев
+                        Employee employee = null;
+                        GuardObject guardObject = null;
+
                         // Базовые проверки
                         if (contract.getClient() == null) {
                             throw new RuntimeException("Клиент не привязан к контракту");
@@ -251,18 +259,19 @@ public class ContractService {
                             throw new RuntimeException("Услуга не привязана к контракту");
                         }
 
-                        // Проверка охранного объекта
+                        // Проверка охранного объекта (вызывается 1 раз)
                         List<GuardObject> guardObjects = guardObjectRepository.findByContractId(contract.getId());
                         if (guardObjects.isEmpty()) {
                             throw new RuntimeException("Не найден охранный объект для контракта. Сначала создайте охранный объект.");
                         }
+                        guardObject = guardObjects.get(0);
 
-                        // Проверка выбранного сотрудника (из формы)
+                        // Проверка выбранного сотрудника (вызывается 1 раз)
                         if (approvalDTO.getSecurityEmployeeId() == null) {
                             throw new RuntimeException("Сотрудник охраны не выбран");
                         }
 
-                        Employee employee = employeeRepository.findById(approvalDTO.getSecurityEmployeeId())
+                        employee = employeeRepository.findById(approvalDTO.getSecurityEmployeeId())
                                 .orElseThrow(() -> new RuntimeException("Выбранный сотрудник не найден"));
 
                         // Проверка времени смены
@@ -273,14 +282,14 @@ public class ContractService {
                             throw new RuntimeException("Время окончания смены не указано");
                         }
 
-                        // Создание расписания охраны
-                        createSecuritySchedule(contract, approvalDTO);
+                        // Создание расписания охраны (передаем кэшированные объекты)
+                        createSecuritySchedule(contract, approvalDTO, employee, guardObject);
 
-                        // Создание уведомлений
-                        createApprovalNotifications(contract, approvalDTO);
+                        // Создание уведомлений (передаем кэшированные объекты)
+                        createApprovalNotifications(contract, approvalDTO, employee);
 
-                        // Отправка email уведомлений
-                        sendApprovalEmails(contract, approvalDTO, guardObjects.get(0));
+                        // Отправка email уведомлений (передаем кэшированные объекты)
+                        sendApprovalEmails(contract, approvalDTO, guardObject, employee);
 
                         // Обновление статуса контракта
                         contract.setStatus("active");
@@ -295,21 +304,9 @@ public class ContractService {
                 .orElseThrow(() -> new RuntimeException("Контракт не найден"));
     }
 
-    private void createSecuritySchedule(Contract contract, ContractApprovalDTO approvalDTO) {
-        Employee employee = employeeRepository.findById(approvalDTO.getSecurityEmployeeId())
-                .orElseThrow(() -> new RuntimeException("Выбранный сотрудник не найден"));
-
-        // Ищем существующий охранный объект
-        List<GuardObject> guardObjects = guardObjectRepository.findByContractId(contract.getId());
-        GuardObject guardObject;
-
-        if (guardObjects.isEmpty()) {
-            throw new RuntimeException("Не найден охранный объект для контракта. Сначала создайте охранный объект.");
-        } else {
-            guardObject = guardObjects.get(0);
-        }
-
-        // Используем дату начала контракта как дату начала охраны
+    private void createSecuritySchedule(Contract contract, ContractApprovalDTO approvalDTO,
+                                        Employee employee, GuardObject guardObject) {
+        // Используем переданные объекты вместо повторных вызовов репозиториев
         LocalDate startDate = contract.getStartDate();
 
         // Создаем расписание на первую неделю (7 дней)
@@ -334,7 +331,8 @@ public class ContractService {
         }
     }
 
-    private void createApprovalNotifications(Contract contract, ContractApprovalDTO approvalDTO) {
+    private void createApprovalNotifications(Contract contract, ContractApprovalDTO approvalDTO,
+                                             Employee employee) {
         // Уведомление для клиента
         Notification clientNotification = new Notification();
         clientNotification.setClient(contract.getClient());
@@ -344,25 +342,21 @@ public class ContractService {
                 contract.getStartDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")));
         notificationRepository.save(clientNotification);
 
-        // Уведомление для сотрудника
-        Employee employee = employeeRepository.findById(approvalDTO.getSecurityEmployeeId()).orElse(null);
-        if (employee != null) {
-            Notification employeeNotification = new Notification();
-            employeeNotification.setEmployee(employee);
-            employeeNotification.setTitle("Новое задание охраны");
-            employeeNotification.setMessage("Вам назначена охрана объекта по контракту №" + contract.getId() +
-                    ". Начало: " + contract.getStartDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) +
-                    ". Время смены: " + approvalDTO.getShiftStartTime() + " - " + approvalDTO.getShiftEndTime());
-            notificationRepository.save(employeeNotification);
-        }
+        // Уведомление для сотрудника (используем переданный объект)
+        Notification employeeNotification = new Notification();
+        employeeNotification.setEmployee(employee);
+        employeeNotification.setTitle("Новое задание охраны");
+        employeeNotification.setMessage("Вам назначена охрана объекта по контракту №" + contract.getId() +
+                ". Начало: " + contract.getStartDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy")) +
+                ". Время смены: " + approvalDTO.getShiftStartTime() + " - " + approvalDTO.getShiftEndTime());
+        notificationRepository.save(employeeNotification);
     }
 
-    private void sendApprovalEmails(Contract contract, ContractApprovalDTO approvalDTO, GuardObject guardObject) {
+    private void sendApprovalEmails(Contract contract, ContractApprovalDTO approvalDTO,
+                                    GuardObject guardObject, Employee employee) {
         try {
-            // Получаем данные для email
+            // Получаем данные для email (используем переданные объекты)
             Client client = contract.getClient();
-            Employee employee = employeeRepository.findById(approvalDTO.getSecurityEmployeeId())
-                    .orElseThrow(() -> new RuntimeException("Сотрудник не найден"));
 
             // Форматируем даты для читаемого отображения
             String startDateFormatted = contract.getStartDate().format(DateTimeFormatter.ofPattern("dd.MM.yyyy"));
@@ -397,9 +391,7 @@ public class ContractService {
             );
 
         } catch (Exception e) {
-            // Логируем ошибку, но не прерываем выполнение
             System.err.println("Ошибка при отправке email уведомлений: " + e.getMessage());
-            // Можно добавить логирование в файл или использовать Logger
         }
     }
 }
