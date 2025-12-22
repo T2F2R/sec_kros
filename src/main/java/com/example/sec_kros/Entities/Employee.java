@@ -90,4 +90,8 @@ public class Employee {
     public String getPassportInfo() {
         return passportSeries + " " + passportNumber;
     }
+
+    public void setAdmin(Boolean isAdmin) {
+        this.isAdmin = isAdmin;
+    }
 }
